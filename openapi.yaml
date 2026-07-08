@@ -1,0 +1,610 @@
+openapi: 3.0.3
+info:
+  title: Nexus Arena API
+  version: 1.0.0
+  description: |
+    Backend API for the Nexus Arena competitive multiplayer gaming platform.
+
+    ## Authentication
+
+    All authenticated endpoints require a Bearer JWT in the `Authorization` header.
+    Access tokens expire in 15 minutes; refresh tokens are stored in an httpOnly
+    cookie and last 7 days. Call `POST /auth/refresh` to rotate the access token.
+
+    ## Real-time
+
+    Tic-Tac-Toe gameplay uses a WebSocket connection at
+    `GET /ttt/rooms/{id}/ws?token={token}`. The token is single-use and obtained
+    from `POST /ttt/rooms` (host), `POST /ttt/rooms/{id}/join` (guest), or
+    `POST /ttt/rooms/{id}/reconnect` (resume).
+
+  contact:
+    name: Nexus Arena
+servers:
+  - url: https://raspy-disk-bc7e.workers.dev
+    description: Production (Cloudflare Workers)
+  - url: http://localhost:8787
+    description: Local (wrangler dev)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token returned by `/auth/login` or `/auth/verify`.
+
+  schemas:
+    SignUpRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          example: shadow_rifter
+        email:
+          type: string
+          format: email
+          example: shadow@nexus.gg
+        password:
+          type: string
+          minLength: 8
+          format: password
+          example: supersecret123
+
+    SignUpResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: user created successfully, check your email
+
+    LoginRequest:
+      type: object
+      required: [name, password]
+      properties:
+        name:
+          type: string
+          example: shadow_rifter
+        password:
+          type: string
+          format: password
+          example: supersecret123
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT access token (15-minute expiry).
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+    VerifyRequest:
+      type: object
+      required: [otp, name]
+      properties:
+        otp:
+          type: string
+          minLength: 6
+          maxLength: 6
+          example: "482917"
+        name:
+          type: string
+          example: shadow_rifter
+
+    VerifyResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Verified successfully
+        accessToken:
+          type: string
+          description: JWT access token (15-minute expiry).
+        user:
+          $ref: "#/components/schemas/UserPublic"
+
+    OtpRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: shadow@nexus.gg
+
+    OtpResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: New OTP sent to your email
+
+    RefreshResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        status:
+          type: string
+          example: success
+
+    LogoutResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        message:
+          type: string
+          example: Logged out
+
+    UpdateProfileRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: New display name (username).
+        email:
+          type: string
+          format: email
+          description: New email address.
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: >
+            Optional new password. Omit to keep the current password unchanged.
+            When provided, must be at least 8 characters and must differ from the
+            current password (the backend rejects identical passwords).
+
+    UpdateProfileResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+
+    UserPublic:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        name:
+          type: string
+          example: shadow_rifter
+        email:
+          type: string
+          format: email
+          example: shadow@nexus.gg
+
+    RoomCredentialsResponse:
+      type: object
+      properties:
+        roomId:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        token:
+          type: string
+          description: Single-use WebSocket token (5-minute expiry).
+          example: f47ac10b-58cc-4372-a567-0e02b2c3d479
+
+    LeaderboardEntry:
+      type: object
+      properties:
+        rank:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: void_walker
+        elo:
+          type: integer
+          example: 2148
+        wins:
+          type: integer
+          example: 142
+        losses:
+          type: integer
+          example: 38
+        draws:
+          type: integer
+          example: 12
+        games:
+          type: integer
+          example: 192
+        win_rate:
+          type: string
+          description: Pre-formatted percentage string.
+          example: "73.9%"
+
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+        status:
+          type: string
+
+paths:
+  /auth/sign-up:
+    post:
+      tags: [Auth]
+      summary: Register a new account
+      description: |
+        Creates an unverified user, hashes the password, generates a 6-digit OTP,
+        and emails it via Resend. The user must call `/auth/verify` within 10
+        minutes to activate their account.
+      operationId: signUp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignUpRequest"
+      responses:
+        "200":
+          description: Account created — OTP emailed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignUpResponse"
+        "400":
+          description: Validation error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Email already registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Sign in
+      description: |
+        Validates credentials against a verified user. On success returns an
+        access JWT (15-minute expiry) and sets an httpOnly `refreshToken`
+        cookie (7-day expiry).
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Signed in.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: refreshToken=...; HttpOnly; Path=/; Max-Age=604800
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: Missing fields.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Invalid credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: User is not verified.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/verify:
+    post:
+      tags: [Auth]
+      summary: Verify email with OTP
+      description: |
+        Consumes the OTP, marks the user as verified, returns an access JWT,
+        and sets the refresh cookie.
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyRequest"
+      responses:
+        "200":
+          description: Verified.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerifyResponse"
+        "400":
+          description: Missing fields.
+        "401":
+          description: Invalid OTP.
+        "404":
+          description: User not found.
+        "410":
+          description: OTP expired.
+
+  /auth/otp:
+    post:
+      tags: [Auth]
+      summary: Resend OTP
+      description: Looks up a user by email, generates a new 6-digit OTP, and emails it.
+      operationId: requestOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpRequest"
+      responses:
+        "200":
+          description: New OTP sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpResponse"
+        "400":
+          description: Email missing.
+        "404":
+          description: User not found.
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      description: |
+        Reads the `refreshToken` httpOnly cookie and returns a fresh access JWT.
+        The refresh cookie is not rotated.
+      operationId: refresh
+      responses:
+        "200":
+          description: New access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResponse"
+        "401":
+          description: No refresh cookie or expired.
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Sign out
+      description: Deletes the `refreshToken` cookie.
+      operationId: logout
+      responses:
+        "200":
+          description: Logged out.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutResponse"
+
+  /auth/update-profile:
+    patch:
+      tags: [Auth]
+      summary: Update profile
+      description: |
+        Updates name, email, and/or password. The backend rejects the request
+        if the new password matches the current one.
+      operationId: updateProfile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateProfileResponse"
+        "401":
+          description: Unauthorized.
+        "404":
+          description: User not found.
+
+  /ttt/rooms:
+    post:
+      tags: [Tic-Tac-Toe]
+      summary: Create a game room
+      description: |
+        Creates a new Tic-Tac-Toe room with the caller as player X. Returns a
+        single-use WebSocket token (5-minute expiry). Share the `roomId` with
+        an opponent so they can call `/ttt/rooms/{id}/join`.
+      operationId: createRoom
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Room created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomCredentialsResponse"
+        "401":
+          description: Unauthorized.
+        "404":
+          description: User not found.
+        "500":
+          description: Room binding missing or initialization failed.
+
+  /ttt/rooms/{id}/join:
+    post:
+      tags: [Tic-Tac-Toe]
+      summary: Join a game room
+      description: |
+        Joins an existing room as player O. Fails if the room is full, finished,
+        or doesn't exist.
+      operationId: joinRoom
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Room ID returned by `POST /ttt/rooms`.
+      responses:
+        "200":
+          description: Joined.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomCredentialsResponse"
+        "401":
+          description: Unauthorized.
+        "404":
+          description: Room not found.
+        "409":
+          description: Room is full.
+        "410":
+          description: Game already finished.
+
+  /ttt/rooms/{id}/reconnect:
+    post:
+      tags: [Tic-Tac-Toe]
+      summary: Reconnect to a game room
+      description: |
+        Issues a fresh WebSocket token for a player who disconnected. The caller
+        must already be a participant (X or O) in the room and must not be
+        currently connected.
+      operationId: reconnectRoom
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Reconnect token issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomCredentialsResponse"
+        "401":
+          description: Unauthorized.
+        "403":
+          description: You are not a player in this room.
+        "404":
+          description: Room not found.
+        "409":
+          description: Already connected.
+        "410":
+          description: Game already finished.
+
+  /ttt/rooms/{id}/ws:
+    get:
+      tags: [Tic-Tac-Toe, WebSocket]
+      summary: WebSocket upgrade for real-time gameplay
+      description: |
+        Upgrades to a WebSocket connection. Requires `?token=` query parameter
+        (single-use, 5-minute expiry) issued by create/join/reconnect.
+
+        ### Client → Server messages
+
+        - `{ "type": "move", "position": 0-8 }` — Place symbol on cell
+        - `{ "type": "rematch" }` — Vote for rematch (only valid after game ends)
+
+        ### Server → Client messages
+
+        - `{ "type": "start", "board": [...], "currentTurn": "X", "players": {...} }`
+        - `{ "type": "waiting" }` — Waiting for opponent
+        - `{ "type": "update", "board": [...], "currentTurn": "O", "lastMove": 4 }`
+        - `{ "type": "end", "result": "X"|"O"|"draw", "winner": "X"|null, "board": [...], "eloChanges": {"X": +16, "O": -16}, "reason": "normal"|"disconnect" }`
+        - `{ "type": "reconnected", "board": [...], "currentTurn": "X", "status": "active", "players": {...} }`
+        - `{ "type": "opponent_disconnected", "timeoutIn": 30 }`
+        - `{ "type": "rematch_vote", "from": "X" }`
+        - `{ "type": "error", "message": "..." }`
+      operationId: roomWebSocket
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Single-use token from create/join/reconnect.
+      responses:
+        "101":
+          description: Switching Protocols (WebSocket upgrade).
+        "401":
+          description: Missing, invalid, or expired token.
+        "426":
+          description: Upgrade header missing.
+
+  /ttt/leaderboard:
+    get:
+      tags: [Tic-Tac-Toe]
+      summary: Get leaderboard
+      description: Returns paginated leaderboard entries sorted by ELO descending.
+      operationId: getLeaderboard
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Leaderboard entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaderboardEntry"
+        "500":
+          description: Server error.
