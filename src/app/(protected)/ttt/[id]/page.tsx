@@ -104,10 +104,7 @@ function GameContent({ roomId }: { roomId: string }) {
   const { state, makeMove, requestRematch } = useTttGame(roomId, tokenParam)
   const [rematchRequested, setRematchRequested] = useState(false)
 
-  // Determine my symbol: X is the creator, O is the joiner.
-  // We infer from whether the token came from createRoom (X) or joinRoom (O)
-  // — but the server doesn't tell us directly. We can detect via the players'
-  // usernames: whichever player matches the logged-in user is "me".
+
   const mySymbol: 'X' | 'O' | null =
     state.players.X?.username === user?.name
       ? 'X'
@@ -133,6 +130,11 @@ function GameContent({ roomId }: { roomId: string }) {
     requestRematch()
     setRematchRequested(true)
   }
+  useEffect(() => {
+  if (state.phase !== 'finished') {
+    setRematchRequested(false)
+  }
+}, [state.phase])
 
   return (
     <div className="flex-1 container mx-auto px-4 py-8">
@@ -318,10 +320,10 @@ function GameContent({ roomId }: { roomId: string }) {
                     <div className="flex flex-wrap gap-2">
                       <Button
                         onClick={handleRematch}
-                        disabled={rematchRequested}
+                        
                       >
                         <RotateCcw className="mr-2 h-4 w-4" />
-                        {rematchRequested
+                        {rematchRequested && state.rematchVotes.length < 2
                           ? 'Waiting for opponent…'
                           : 'Request rematch'}
                       </Button>
