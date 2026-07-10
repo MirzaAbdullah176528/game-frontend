@@ -1,5 +1,5 @@
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8787'
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://raspy-disk-bc7e.ajjh564356165649.workers.dev'
 
 export class ApiError extends Error {
   status: number
