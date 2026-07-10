@@ -194,7 +194,7 @@ export default function SignupPage() {
                 )}
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 mb-5">
                 <Label htmlFor="password">Password</Label>
                 <Input
                   id="password"

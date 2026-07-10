@@ -204,7 +204,7 @@ export default function TttLobbyPage() {
             </CardHeader>
             <form onSubmit={handleJoin}>
               <CardContent>
-                <div className="space-y-2">
+                <div className="space-y-2 mb-2">
                   <Label htmlFor="roomId">Room ID</Label>
                   <Input
                     id="roomId"
