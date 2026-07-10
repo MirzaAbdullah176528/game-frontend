@@ -114,7 +114,7 @@ function GameContent({ roomId }: { roomId: string }) {
 
   useEffect(() => {
     if (state.error?.message) {
-      toast.error(state.error.message)
+      // toast.error(state.error.message)
     }
   }, [state.error?.message])
 
