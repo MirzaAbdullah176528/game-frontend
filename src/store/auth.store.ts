@@ -6,12 +6,12 @@ import { tokenStore } from '@/lib/api/client'
 import { getStoredUser } from '@/lib/auth'
 
 type AuthState = {
-  /** null while hydrating, the user once known, or null if logged out. */
+  
   user: { id: number; name: string; email: string } | null
   hydrated: boolean
-  /** Hydrate from localStorage on mount. */
+  
   hydrate: () => void
-  /** Called after a successful login/verify — stores token + decodes user. */
+  
   setToken: (token: string) => void
   logout: () => Promise<void>
 }
@@ -45,7 +45,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       await authApi.logout()
     } catch {
-      // ignore — the cookie clear happens server-side; we still clear locally.
     }
     tokenStore.clear()
     set({ user: null })

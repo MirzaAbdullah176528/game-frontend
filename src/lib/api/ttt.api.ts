@@ -4,6 +4,7 @@ import { API_BASE_URL } from './client'
 export type CreateRoomResponse = {
   roomId: string
   token: string
+  public: boolean
 }
 
 export type JoinRoomResponse = {
@@ -29,7 +30,7 @@ export type LeaderboardQuery = {
 
 export const tttApi = {
   createRoom: () =>
-    apiClient.post<CreateRoomResponse>('/ttt/rooms', undefined),
+    apiClient.post<CreateRoomResponse>('/ttt/rooms/:public', undefined),
 
   joinRoom: (roomId: string) =>
     apiClient.post<JoinRoomResponse>(`/ttt/rooms/${roomId}/join`, undefined),
@@ -56,7 +57,7 @@ export const tttApi = {
   },
 }
 
-// ---- WebSocket message types (mirrors Games-backend/src/ttt/game_room.ts) ----
+
 
 export type TttSymbol = 'X' | 'O'
 export type TttStatus = 'waiting' | 'active' | 'finished'

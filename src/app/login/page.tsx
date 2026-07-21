@@ -37,6 +37,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
+
   const {
     register,
     handleSubmit,
@@ -55,7 +56,7 @@ export default function LoginPage() {
       toast.success('Welcome back!')
       router.push('/ttt')
     } catch (err) {
-      // apiFetch always throws ApiError (network errors are wrapped too).
+      
       const message =
         err instanceof Error ? err.message : 'Sign-in failed. Please try again.'
       setFormError(message)
@@ -92,6 +93,7 @@ export default function LoginPage() {
               <Input
                 id="name"
                 placeholder="your_username"
+                type="text"
                 autoComplete="username"
                 {...register('name')}
               />
@@ -111,6 +113,7 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 {...register('password')}
               />
+
               {errors.password && (
                 <p className="text-xs text-destructive">
                   {errors.password.message}

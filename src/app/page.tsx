@@ -42,6 +42,7 @@ const features = [
 
 export default function Home() {
   const { user, hydrated, hydrate } = useAuthStore()
+  const isLoggedIn = !!user  
 
   useEffect(() => {
     hydrate()
@@ -63,10 +64,10 @@ export default function Home() {
           <div className="mx-auto max-w-3xl text-center">
             <span className="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Live · powered by Cloudflare Durable Objects
+              Live · Mulitple games on single plateform
             </span>
             <h1 className="mt-6 text-4xl font-bold tracking-tight md:text-6xl">
-              Tic-Tac-Toe, <span className="text-primary">ranked.</span>
+              A<span className="text-primary">.</span>G<span className="text-primary">.</span>H
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
               Real-time multiplayer Tic-Tac-Toe with ELO matchmaking,
@@ -106,23 +107,29 @@ export default function Home() {
           </div>
         </div>
       </section>
+      
 
-      {/* Features */}
       <section className="container mx-auto px-4 py-16 md:py-24">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
             Why Arena
           </h2>
           <p className="mt-3 text-muted-foreground">
-            A small but complete multiplayer gaming platform — built on a
-            serverless Cloudflare Workers backend.
+            
           </p>
         </div>
         <div className="mt-12 grid gap-6 md:grid-cols-2">
           {features.map((f) => {
             const Icon = f.icon
             return (
-              <Card key={f.title} className="h-full">
+              <Card key={f.title} 
+              className="h-full
+                        bg-[#1C1C1F]/70
+                        backdrop-blur-xl
+                        border border-[#2A2A2E]
+                        hover:bg-[#755265]/90
+                        transition-colors"
+              >
                 <CardHeader>
                   <div className="grid h-10 w-10 place-items-center rounded-md bg-primary/10 text-primary">
                     <Icon className="h-5 w-5" />
@@ -136,21 +143,20 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA */}
+
       <section className="border-t bg-muted/30">
         <div className="container mx-auto px-4 py-16 md:py-20">
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-3xl font-bold tracking-tight">
-              Ready to climb the ladder?
+              { isLoggedIn ? 'Ready to climb the ladder?' : 'Ready to play?' }
             </h2>
             <p className="mt-3 text-muted-foreground">
-              Sign up, verify your email, and play your first ranked match in
-              under a minute.
+              { isLoggedIn ? 'Play multiple games and climb the ELO ladder. Every win, loss, and draw counts.' : 'Sign up for an account to play Multiple games and climb the ELO ladder. Every win, loss, and draw counts.' }
             </p>
             <div className="mt-6">
               <Button size="lg" asChild>
-                <Link href="/signup">
-                  Create an account
+                <Link href={ isLoggedIn ? '' : "/signup"}>
+                  { isLoggedIn ? 'Play now' : 'Get started' }
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>

@@ -1,5 +1,5 @@
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'https://raspy-disk-bc7e.ajjh564356165649.workers.dev'
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://127.0.0.1:8787'
 
 export class ApiError extends Error {
   status: number
@@ -33,13 +33,9 @@ export const tokenStore = {
 type FetchOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
   body?: unknown
-  /** Send Authorization header. Default true. */
   auth?: boolean
-  /** Skip auto-refresh on 401. Default false. */
   skipRefresh?: boolean
-  /** Custom headers. */
   headers?: Record<string, string>
-  /** AbortSignal. */
   signal?: AbortSignal
 }
 
@@ -47,6 +43,7 @@ let refreshPromise: Promise<string | null> | null = null
 
 async function refreshAccessToken(): Promise<string | null> {
   if (refreshPromise) return refreshPromise
+
   refreshPromise = (async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
@@ -54,9 +51,31 @@ async function refreshAccessToken(): Promise<string | null> {
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
       })
-      if (!res.ok) return null
-      const data = (await res.json()) as { accessToken?: string }
-      if (!data.accessToken) return null
+
+      if (res.status === 204) {
+        return null
+      }
+
+      if (!res.ok) {
+        return null
+      }
+
+      const contentType = res.headers.get('content-type') ?? ''
+      if (!contentType.includes('application/json')) {
+        return null
+      }
+
+      let data: { accessToken?: string }
+      try {
+        data = (await res.json()) as { accessToken?: string }
+      } catch {
+        return null
+      }
+
+      if (!data.accessToken || typeof data.accessToken !== 'string') {
+        return null
+      }
+
       tokenStore.set(data.accessToken)
       return data.accessToken
     } catch {
@@ -65,10 +84,10 @@ async function refreshAccessToken(): Promise<string | null> {
       refreshPromise = null
     }
   })()
+
   return refreshPromise
 }
 
-/** Human-readable message for a non-200 status, when the body has none. */
 function statusFallback(status: number): string {
   switch (status) {
     case 400:
@@ -98,7 +117,6 @@ function statusFallback(status: number): string {
   }
 }
 
-/** Translate a fetch() TypeError into a user-facing message. */
 function networkErrorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err)
   const lower = raw.toLowerCase()
@@ -117,6 +135,45 @@ function networkErrorMessage(err: unknown): string {
   return raw || 'An unexpected network error occurred.'
 }
 
+async function doFetch(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init)
+  } catch (err) {
+    throw new ApiError(networkErrorMessage(err), 0, err)
+  }
+}
+
+async function parseBody(res: Response): Promise<unknown> {
+  const contentType = res.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) return null
+  try {
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+function extractErrorMessage(parsed: unknown, status: number): string {
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>
+    if (typeof obj.message === 'string') return obj.message
+    if (typeof obj.error === 'string') return obj.error
+    if (
+      obj.error &&
+      typeof obj.error === 'object' &&
+      typeof (obj.error as Record<string, unknown>).message === 'string'
+    ) {
+      return (obj.error as Record<string, unknown>).message as string
+    }
+    if (obj.formErrors && typeof obj.formErrors === 'object') {
+      return 'Some fields were invalid. Please review and try again.'
+    }
+  } else if (typeof parsed === 'string' && parsed.trim().length > 0) {
+    return parsed
+  }
+  return statusFallback(status)
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   options: FetchOptions = {}
@@ -132,93 +189,59 @@ export async function apiFetch<T = unknown>(
 
   const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`
 
-  const finalHeaders: Record<string, string> = {
-    Accept: 'application/json',
-    ...headers,
+  const buildHeaders = (token: string | null): Record<string, string> => {
+    const h: Record<string, string> = { Accept: 'application/json', ...headers }
+    if (body !== undefined && !(body instanceof FormData)) {
+      h['Content-Type'] = 'application/json'
+    }
+    if (auth && token) {
+      h['Authorization'] = `Bearer ${token}`
+    }
+    return h
   }
 
-  if (body !== undefined && !(body instanceof FormData)) {
-    finalHeaders['Content-Type'] = 'application/json'
+  const buildInit = (token: string | null): RequestInit => {
+    const init: RequestInit = {
+      method,
+      headers: buildHeaders(token),
+      credentials: 'include',
+      signal,
+    }
+    if (body !== undefined) {
+      init.body = body instanceof FormData ? body : JSON.stringify(body)
+    }
+    return init
   }
 
-  if (auth) {
-    const token = tokenStore.get()
-    if (token) finalHeaders['Authorization'] = `Bearer ${token}`
-  }
+  let currentToken = auth ? tokenStore.get() : null
+  let res = await doFetch(url, buildInit(currentToken))
+  let hasRetried = false
 
-  const init: RequestInit = {
-    method,
-    headers: finalHeaders,
-    credentials: 'include',
-    signal,
-  }
-
-  if (body !== undefined) {
-    init.body = body instanceof FormData ? body : JSON.stringify(body)
-  }
-
-  let res: Response
-  try {
-    res = await fetch(url, init)
-  } catch (err) {
-    // fetch() only throws on network-level failures (DNS, CORS, offline, abort).
-    throw new ApiError(networkErrorMessage(err), 0, err)
-  }
-
-  // Auto-refresh on 401 — try once, then give up.
-  if (res.status === 401 && auth && !skipRefresh) {
+  if (res.status === 401 && auth && !skipRefresh && !hasRetried) {
+    hasRetried = true
     const newToken = await refreshAccessToken()
-    if (newToken) {
-      finalHeaders['Authorization'] = `Bearer ${newToken}`
-      try {
-        res = await fetch(url, { ...init, headers: finalHeaders })
-      } catch (err) {
-        throw new ApiError(networkErrorMessage(err), 0, err)
-      }
-    } else {
+
+    if (!newToken) {
       tokenStore.clear()
+      throw new ApiError(statusFallback(401), 401, null)
+    }
+
+    currentToken = newToken
+    res = await doFetch(url, buildInit(currentToken))
+
+    if (res.status === 401) {
+      tokenStore.clear()
+      const parsed = await parseBody(res)
+      throw new ApiError(extractErrorMessage(parsed, 401), 401, parsed)
     }
   }
 
-  const contentType = res.headers.get('content-type') ?? ''
-  const isJson = contentType.includes('application/json')
-  let parsed: unknown = null
-  if (isJson) {
-    try {
-      parsed = await res.json()
-    } catch {
-      parsed = null
-    }
-  }
+  const parsed = await parseBody(res)
 
   if (!res.ok) {
-    let message: string | null = null
-
-    if (parsed && typeof parsed === 'object') {
-      const obj = parsed as Record<string, unknown>
-      // Common backend shapes: { message }, { error }, { error: { message } }, Zod's { formErrors }
-      if (typeof obj.message === 'string') {
-        message = obj.message
-      } else if (typeof obj.error === 'string') {
-        message = obj.error
-      } else if (
-        obj.error &&
-        typeof obj.error === 'object' &&
-        typeof (obj.error as Record<string, unknown>).message === 'string'
-      ) {
-        message = (obj.error as Record<string, unknown>).message as string
-      } else if (obj.formErrors && typeof obj.formErrors === 'object') {
-        // Hono zodValidator flatten() output
-        message = 'Some fields were invalid. Please review and try again.'
-      }
-    } else if (typeof parsed === 'string' && parsed.trim().length > 0) {
-      message = parsed
-    }
-
-    throw new ApiError(message ?? statusFallback(res.status), res.status, parsed)
+    throw new ApiError(extractErrorMessage(parsed, res.status), res.status, parsed)
   }
 
-  // Some endpoints return empty 204; allow callers to receive {} instead of null.
   return (parsed ?? ({} as T)) as T
 }
 

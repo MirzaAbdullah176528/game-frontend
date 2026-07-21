@@ -7,14 +7,14 @@ export type UserProfile = LeaderboardEntry & {
 }
 
 export const userApi = {
-  /** Read the logged-in user's identity from the stored JWT. */
+  
   getMe(): { id: number; name: string; email: string } | null {
     const u = getStoredUser()
     if (!u) return null
     return { id: u.id, name: u.sub, email: u.email }
   },
 
-  /** Look the current user up in the leaderboard (returns stats or null). */
+  
   async getMyStats(): Promise<UserProfile | null> {
     const me = this.getMe()
     if (!me) return null

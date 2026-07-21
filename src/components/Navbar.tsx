@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils'
 
 const links = [
   { href: '/', label: 'Home', icon: Home },
-  { href: '/ttt', label: 'Play TTT', icon: Gamepad2 },
+  { href: '/games', label: 'Choose your arena', icon: Gamepad2 },
   { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
 ]
 
@@ -52,7 +52,6 @@ export function Navbar() {
           </Link>
         </div>
 
-        {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-1">
           {links.map((l) => {
             const Icon = l.icon

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, Plus, LogIn, Copy, Check, Trophy, Gamepad2 } from 'lucide-react'
+import { Loader2, Plus, LogIn, Copy, Check, Trophy, Gamepad2, Box } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -18,6 +18,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { tttApi } from '@/lib/api/ttt.api'
+import { Controller, useForm } from 'react-hook-form'
+import { Checkbox } from '@/components/ui/checkbox'
+import FormControlLabel from '@mui/material/FormControlLabel';
+
 
 export default function TttLobbyPage() {
   const router = useRouter()
@@ -28,15 +32,26 @@ export default function TttLobbyPage() {
   const [createdRoom, setCreatedRoom] = useState<{
     roomId: string
     token: string
+    public: boolean
   } | null>(null)
   const [copied, setCopied] = useState(false)
+
+
+  const { control, watch } = useForm({
+    defaultValues: {
+    pulicRoom: false,
+    },
+  });
+
+  
+  const pulicRoom = watch("pulicRoom");
 
   const handleCreate = async () => {
     setCreating(true)
     setError(null)
     try {
       const res = await tttApi.createRoom()
-      setCreatedRoom({ roomId: res.roomId, token: res.token })
+      setCreatedRoom({ roomId: res.roomId, token: res.token, public: pulicRoom })
       toast.success('Room created', {
         description: 'Share the Room ID with a friend to play.',
       })
@@ -106,7 +121,7 @@ export default function TttLobbyPage() {
         )}
 
         <div className="grid gap-6 md:grid-cols-2">
-          {/* Create room */}
+          
           <Card>
             <CardHeader>
               <div className="grid h-10 w-10 place-items-center rounded-md bg-primary/10 text-primary">
@@ -169,6 +184,7 @@ export default function TttLobbyPage() {
                   </Button>
                 </>
               ) : (
+                <div className="flex flex-col gap-2 w-full">
                 <Button
                   onClick={handleCreate}
                   disabled={creating}
@@ -177,20 +193,39 @@ export default function TttLobbyPage() {
                   {creating ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating…
+                      Finding oponent…
                     </>
                   ) : (
                     <>
                       <Plus className="mr-2 h-4 w-4" />
-                      Create room
+                      Play online
                     </>
                   )}
                 </Button>
+              <div className="mt-2 w-full flex items-center justify-center gap-5">
+                <Controller
+                  name="pulicRoom"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControlLabel
+                    className="text-sm text-muted-foreground"
+                      label="Public room (anyone can join)"
+                      control={
+                        <Checkbox
+                        className="mr-2"
+                          checked={field.value}
+                          onCheckedChange={(checked) => field.onChange(checked)}
+                        />
+                      }
+                    />
+                  )}
+                />
+              </div>
+              </div>
               )}
             </CardFooter>
           </Card>
 
-          {/* Join room */}
           <Card>
             <CardHeader>
               <div className="grid h-10 w-10 place-items-center rounded-md bg-primary/10 text-primary">
